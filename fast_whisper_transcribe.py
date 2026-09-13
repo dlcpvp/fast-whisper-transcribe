@@ -1,4 +1,5 @@
 import argparse
+from contextlib import contextmanager
 import os
 import re
 import sys
@@ -71,30 +72,80 @@ def split_english_sentences(text: str) -> list[str]:
 
     return sentences
 
+@contextmanager
+def menu_key_reader():
+    """提供跨平台按键读取器，并在退出时恢复 POSIX 终端设置。"""
+    if os.name == "nt":
+        import msvcrt
+
+        def read_key():
+            key = msvcrt.getwch()
+            if key in ("\x00", "\xe0"):
+                return {"H": "previous", "K": "previous",
+                        "P": "next", "M": "next"}.get(msvcrt.getwch(), "")
+            return key
+
+        yield read_key
+    else:
+        import select
+        import termios
+        import tty
+
+        fd = sys.stdin.fileno()
+        original_settings = termios.tcgetattr(fd)
+
+        def read_key():
+            key = os.read(fd, 1)
+            if not key:
+                raise KeyboardInterrupt
+            if key != b"\x1b":
+                return key.decode("ascii", errors="ignore")
+            # 单独 Esc 是取消；方向键发送 ESC [ A 等转义序列。
+            if not select.select([fd], [], [], 0.15)[0]:
+                return "\x1b"
+            prefix = os.read(fd, 1)
+            if prefix not in (b"[", b"O"):
+                return ""
+            for _ in range(16):
+                if not select.select([fd], [], [], 0.15)[0]:
+                    return ""
+                suffix = os.read(fd, 1)
+                if not suffix:
+                    raise KeyboardInterrupt
+                if b"@" <= suffix <= b"~":
+                    return {b"A": "previous", b"D": "previous",
+                            b"B": "next", b"C": "next"}.get(suffix, "")
+            return ""
+
+        try:
+            tty.setcbreak(fd)
+            yield read_key
+        finally:
+            termios.tcsetattr(fd, termios.TCSADRAIN, original_settings)
+
+
 def select_output_format():
-    """Windows 控制台方向键菜单，无需输入文字或安装额外依赖。"""
-    if os.name != "nt" or not sys.stdin.isatty() or not sys.stdout.isatty():
-        raise ValueError("交互菜单需要 Windows 终端；非交互运行请指定 --format srt、txt 或 both")
-    import msvcrt
+    """Windows / Linux / macOS 方向键菜单，无需额外依赖。"""
+    if not sys.stdin.isatty() or not sys.stdout.isatty():
+        raise ValueError("交互菜单需要交互式终端；非交互运行请指定 --format srt、txt 或 both")
 
     options = [("srt", "SRT 字幕"), ("txt", "TXT 阅读文本"), ("both", "SRT + TXT（只识别一次）")]
     selected = 0
     print("请选择输出格式（方向键切换，回车确认，Esc 取消）：")
-    while True:
-        print("\r" + f"  < {options[selected][1]} >".ljust(70), end="", flush=True)
-        key = msvcrt.getwch()
-        if key in ("\x00", "\xe0"):
-            arrow = msvcrt.getwch()
-            if arrow in ("H", "K"):
+    with menu_key_reader() as read_key:
+        while True:
+            print("\r" + f"  < {options[selected][1]} >".ljust(70), end="", flush=True)
+            key = read_key()
+            if key == "previous":
                 selected = (selected - 1) % len(options)
-            elif arrow in ("P", "M"):
+            elif key == "next":
                 selected = (selected + 1) % len(options)
-        elif key == "\r":
-            print()
-            return options[selected][0]
-        elif key in ("\x1b", "\x03"):
-            print()
-            raise KeyboardInterrupt
+            elif key in ("\r", "\n"):
+                print()
+                return options[selected][0]
+            elif key in ("\x1b", "\x03"):
+                print()
+                raise KeyboardInterrupt
 
 
 def subtitle_text(words):

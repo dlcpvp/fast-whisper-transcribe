@@ -40,6 +40,14 @@ python C:\Users\jason\Desktop\转译\fast_whisper_transcribe.py "C:\Users\jason\
 
 运行后会显示格式菜单，用 **↑ / ↓（或 ← / →）切换，回车确认**，不需要打字输入选项。按 Esc 可取消。
 
+格式菜单支持 Windows、Ubuntu/Linux 和 macOS 的交互式终端，无需安装额外菜单依赖。在 Ubuntu 中，激活已安装 faster-whisper 的环境后，可在脚本目录运行：
+
+```bash
+python3 fast_whisper_transcribe.py "/home/yourname/audio"
+```
+
+通过 SSH 使用菜单时需要分配终端（例如 `ssh -t`）；管道、后台任务等非交互运行请指定 `--format`。
+
 - **SRT 字幕**：按单词时间戳切成短字幕，每条最多两行，英文每行目标不超过 42 字符，每条最长目标 6 秒；优先在标点及至少 0.5 秒的停顿处切分。
 - **TXT 阅读文本**：保留按完整英文句子换行的排版。
 - **SRT + TXT**：一次识别同时生成两个文件。
